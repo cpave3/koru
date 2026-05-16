@@ -39,3 +39,24 @@ The Koru CLI SHALL record the SHA-256 checksum of both the registry source file 
 - **THEN** the installation database stores `installedChecksum` (installed file hash at install time)
 - **THEN** on subsequent syncs, the Koru CLI compares the installed file's hash against `installedChecksum` (drift detection)
 - **THEN** if no drift, the Koru CLI compares the registry source hash against `sourceChecksum` (update detection)
+
+### Requirement: Directory artifacts use aggregate tree checksums
+The Koru CLI SHALL detect drift on directory artifacts by hashing every file in the tree and aggregating the result, so that a modification to *any* file under a directory artifact's destination is reported as drift.
+
+#### Scenario: Tree checksum manifest
+- **WHEN** the Koru CLI computes a checksum for a directory destination
+- **THEN** it enumerates every file under the directory recursively
+- **THEN** it produces a sorted manifest of `<relative-path>\0<sha256-of-file>\n` lines
+- **THEN** the recorded checksum is the SHA-256 of that manifest, with a `sha256-tree:` prefix
+
+#### Scenario: Drift detected when any file in the tree changes
+- **GIVEN** a directory artifact was installed with copy mode and its tree checksum recorded
+- **WHEN** the user modifies a sibling file inside the destination (not `SKILL.md` itself)
+- **AND** the user runs `koru sync`
+- **THEN** the Koru CLI reports drift for that artifact
+- **THEN** sync aborts without overwriting the directory
+
+#### Scenario: Detector branches on file vs directory
+- **WHEN** the Koru CLI evaluates a drift record
+- **THEN** it uses `ComputeSha256Tree` if either the live destination is a directory or the recorded checksum has the `sha256-tree:` prefix
+- **THEN** otherwise it uses `ComputeSha256` for a single file

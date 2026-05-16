@@ -11,7 +11,17 @@ All managed artifacts are markdown files. Their identity and routing are determi
 ## Core Entities
 
 ### Skill
-A reusable, domain-specific knowledge module (markdown). Consumed by an agent harness at runtime to specialize behavior (e.g., a "database migration" skill, a "code review" skill).
+A reusable, domain-specific knowledge module. Stored either as a single markdown file or as a directory containing a `SKILL.md` plus supplementary files. Consumed by an agent harness at runtime to specialize behavior.
+
+**Two storage shapes:**
+- **File**: `core/skills/foo.md` — a single markdown file. Simplest case.
+- **Directory**: `core/skills/foo/SKILL.md` plus any siblings (`AGENT-BRIEF.md`, `scripts/`, etc.). The directory becomes the artifact; the directory's basename is the artifact's name. Convention borrowed from `mattpocock/skills`, `vercel-labs/agent-skills`, etc.
+
+Discovery rules (ADR 0004):
+1. Any directory containing a `SKILL.md` is a directory artifact; every tracked file beneath it belongs to that artifact.
+2. A tracked `.md` file outside any `SKILL.md` directory is a single-file artifact.
+3. Non-`.md` files outside any `SKILL.md` directory are ignored.
+4. Most-specific match wins: a deeper `SKILL.md` carves a sub-artifact out of its parent.
 
 ### Agent
 A named configuration profile (markdown) that assembles resources (skills, model settings, harness parameters) into a runnable definition. Declares *what* to run and *which* context to load.
@@ -84,6 +94,28 @@ Flags:
 - `--project <path>` — Sync only the specified project's local artifacts.
 - `--dry-run` — Preview changes without applying.
 
+### `koru import <git-url> [<subpath>]`
+Copy a skill from an external git repo into a local Koru registry, recording its provenance in a `source:` YAML frontmatter block.
+
+Flags:
+- `--name <local-name>` — Override the artifact name in the target registry. Defaults to the source basename.
+- `--registry <name>` — Which registry to import into. Defaults to the global default; prompted if unset and multiple registries exist.
+- `--force` — Overwrite an existing same-named artifact in the target registry.
+- `--yes` — Skip prompts (subpath becomes required in this mode).
+
+Workflow:
+1. Clone `<git-url>` to a temporary directory.
+2. Run `ArtifactDiscovery` over the cloned tree to enumerate source artifacts.
+3. If `<subpath>` is given, select the matching artifact (a `.md` file or a `SKILL.md` directory). Otherwise open an interactive picker over discovered artifacts.
+4. For each selected artifact:
+   - Compute the target path: `core/skills/<name>.md` for file artifacts or `core/skills/<name>/` for directory artifacts.
+   - Refuse if the target already exists, unless `--force` is set.
+   - Copy the file or tree into the target registry's working tree.
+   - Read the imported `SKILL.md` (or single `.md`), parse any existing YAML frontmatter, set/replace the top-level `source:` block with `{repo, path, ref, commit, imported_at}`, write it back. Other frontmatter keys are preserved.
+5. `git add` + `git commit` in the target registry working tree with a message like `import: <name> from <repo>@<short-sha>`.
+
+After import, the artifact is a normal Koru asset: `koru install`, `koru sync`, `koru reset`, and drift detection all apply. The originating repo is **not** queried again; refresh requires re-running `koru import --force`.
+
 ### `koru install <artifact-path>`
 Install a specific artifact from a registry into the current project directory.
 
@@ -119,14 +151,19 @@ A registry is a git repository with this convention:
 
 ```
 my-registry/
-├── registry.yaml          # Required. Plugin manifest.
+├── registry.yaml                 # Required. Plugin manifest.
 ├── core/
-│   └── skills/            # Core-handled artifacts (no namespace)
-├── chimera/               # Plugin namespace: chimera plugin claims everything here
-│   └── modes/
-├── claude/                # Plugin namespace: claude plugin claims everything here
 │   └── skills/
-└── ...                    # Other plugin namespaces
+│       ├── foo.md                # Single-file skill
+│       └── grill-me/             # Directory-shaped skill
+│           ├── SKILL.md          # Marks the directory as one artifact
+│           ├── AGENT-BRIEF.md    # Supplementary doc, belongs to "grill-me"
+│           └── scripts/run.sh    # Any non-.md sibling, also belongs to "grill-me"
+├── chimera/                      # Plugin namespace: chimera plugin claims everything here
+│   └── modes/
+├── claude/                       # Plugin namespace: claude plugin claims everything here
+│   └── skills/
+└── ...                           # Other plugin namespaces
 ```
 
 Rules:
@@ -165,9 +202,13 @@ public interface IPlugin
     /// Returns the destination path for the given artifact, scope, and mode.
     /// May return null to opt out of installing this artifact.
     /// </summary>
-    InstallPlan GetInstallPlan(Artifact artifact, Scope scope, InstallMode mode);
+    InstallPlan? GetInstallPlan(Artifact artifact, Scope scope, InstallMode mode);
 }
+
+public record Artifact(string Path, string RegistryRoot, bool IsDirectory = false);
 ```
+
+`Artifact.Path` is forward-slash-relative to the registry root. For directory artifacts the path is the directory itself (no trailing slash, no `SKILL.md` suffix). For file artifacts it includes the `.md` extension. `Artifact.IsDirectory` tells the plugin whether to plan a file destination or a directory destination; both shapes return a single `InstallPlan` with a single `DestinationPath`.
 
 the Koru CLI uses `PathClaims` for routing and `GetInstallPlan` for placement. For any matched artifact, every claiming plugin's `GetInstallPlan` is called. If two plugins return the same absolute destination path, sync errors out.
 
@@ -230,18 +271,18 @@ Stored per registry at `~/.koru/registries/<name>/state.json`. Never committed t
 ```
 
 - `installedChecksum`: `null` for `link` mode.
-- `sourceChecksum`: SHA-256 of the source file at time of last install/sync.
+- `sourceChecksum`: SHA-256 of the source at time of last install/sync. For directory artifacts the value is a tree hash with `sha256-tree:` prefix — SHA-256 over a sorted `(relpath\0filehash\n)` manifest. For file artifacts the prefix is `sha256:`.
 
 ### Drift Handling
 For copy-mode artifacts, the sync pipeline is:
 
-1. Compute checksum of the **installed** file.
+1. Compute checksum of the **installed** artifact. Use `ComputeSha256` for a file destination; use `ComputeSha256Tree` for a directory destination. Selection is based on `Directory.Exists(destinationPath)` or the `sha256-tree:` prefix on the recorded checksum.
 2. If it differs from `installedChecksum` → **drift detected**. Abort sync for this artifact. Report: `"<path> has local modifications. Run 'koru reset <artifact>' to restore, or revert your changes."`
-3. If it matches, compute checksum of the **registry source** file.
-4. If source checksum differs from `sourceChecksum` → overwrite the installed file and update both checksums.
+3. If it matches, compute checksum of the **registry source** (same file-vs-tree selection).
+4. If source checksum differs from `sourceChecksum` → overwrite the installed artifact and update both checksums. For directory artifacts, the copy is atomic: stage to `<dest>.koru-<rand>/`, rename existing destination to a tombstone, `Directory.Move` the staged tree in, delete the tombstone.
 5. If both match → no-op.
 
-Link-mode artifacts skip drift detection entirely. The symlink target is always refreshed to point to the current working tree path.
+Link-mode artifacts skip drift detection entirely. The symlink target is always refreshed to point to the current working tree path. For directory artifacts, the symlink is a single `Directory.CreateSymbolicLink` at the destination (not per-file symlinks).
 
 ---
 
@@ -362,9 +403,10 @@ koru sync
 | ADR 0001 | Plugin claims are additive. A single artifact may be installed to multiple destinations by multiple plugins. Two plugins may not claim the same exact destination path. |
 | ADR 0002 | Installation state database tracks every file placed by the Koru CLI, per registry. Enables safe cleanup, updates, and drift detection. |
 | ADR 0003 | Sync leverages git. On dirty working tree, user is prompted to abort/commit/push or proceed with local changes. |
+| ADR 0004 | An artifact is either a single `.md` file or a directory containing `SKILL.md`. Directory artifacts are installed as a tree; drift uses an aggregate `sha256-tree:` manifest hash. |
 
 ---
 
 ## Key Invariant
 
-All managed artifacts are markdown files at rest. the Koru CLI does not dictate or interpret artifact frontmatter — that belongs to the consuming harness. Artifact identity and routing is determined by file system shape (registry directory layout), plugin path claims, and the installation state database.
+All managed artifacts are markdown — either a single `.md` file or a directory anchored by a `SKILL.md`. The Koru CLI does not interpret artifact frontmatter for routing — that belongs to the consuming harness. The one exception is `koru import`, which writes a top-level `source:` frontmatter block to record provenance; all other frontmatter keys are preserved untouched. Artifact identity and routing is determined by file system shape (registry directory layout + presence of `SKILL.md`), plugin path claims, and the installation state database.
