@@ -5,7 +5,9 @@ using Koru.Cli.Commands.Plugin;
 using Koru.Cli.Commands.Registry;
 using Koru.Cli.Commands.Sync;
 using Koru.Cli.Core;
+using Koru.Cli.Core.Util;
 using Microsoft.Extensions.DependencyInjection;
+using Spectre.Console;
 using Spectre.Console.Cli;
 
 namespace Koru.Cli;
@@ -14,6 +16,8 @@ public class Program
 {
     public static int Main(string[] args)
     {
+        AnsiConsole.Console = new VimAnsiConsole(AnsiConsole.Console);
+
         var services = new ServiceCollection();
         Bootstrap.RegisterServices(services);
 

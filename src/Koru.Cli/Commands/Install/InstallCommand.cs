@@ -1,7 +1,6 @@
 using Koru.Contracts;
 using Koru.Cli.Core.Abstractions;
 using Koru.Cli.Core.Install;
-using Koru.Cli.Core.Util;
 using Spectre.Console;
 using Spectre.Console.Cli;
 
@@ -157,10 +156,9 @@ public class InstallCommand : Command<InstallCommand.InstallSettings>
 
         BuildTree(prompt, all);
 
-        var console = new VimAnsiConsole(AnsiConsole.Console);
         try
         {
-            var picked = console.Prompt(prompt);
+            var picked = AnsiConsole.Prompt(prompt);
             return picked.Where(p => p.Artifact is not null).Select(p => p.Artifact!).ToList();
         }
         catch (OperationCanceledException)
