@@ -28,14 +28,23 @@ public class ArtifactResolver : IArtifactResolver
 
     public IReadOnlyList<ResolvedArtifact> Resolve(string query)
     {
+        var normalizedQuery = query.Replace('\\', '/');
+        return Collect(trackedPath => IsMatch(normalizedQuery, trackedPath));
+    }
+
+    public IReadOnlyList<ResolvedArtifact> ResolveAll()
+    {
+        return Collect(_ => true);
+    }
+
+    private IReadOnlyList<ResolvedArtifact> Collect(Func<string, bool> predicate)
+    {
         var results = new List<ResolvedArtifact>();
         var config = _configStore.Load();
         var plugins = _pluginHost.LoadedPlugins;
 
         if (plugins.Count == 0)
             return results;
-
-        var normalizedQuery = query.Replace('\\', '/');
 
         foreach (var registry in config.Registries)
         {
@@ -49,25 +58,28 @@ public class ArtifactResolver : IArtifactResolver
             {
                 var normalizedTracked = trackedPath.Replace('\\', '/');
 
-                if (IsMatch(normalizedQuery, normalizedTracked))
+                if (!IsArtifactFile(normalizedTracked))
+                    continue;
+
+                if (!predicate(normalizedTracked))
+                    continue;
+
+                var claimingPlugins = new List<IPlugin>();
+                foreach (var plugin in plugins)
                 {
-                    var claimingPlugins = new List<IPlugin>();
-                    foreach (var plugin in plugins)
+                    foreach (var claim in plugin.PathClaims)
                     {
-                        foreach (var claim in plugin.PathClaims)
+                        if (_globMatcher.Matches(claim, normalizedTracked))
                         {
-                            if (_globMatcher.Matches(claim, normalizedTracked))
-                            {
-                                claimingPlugins.Add(plugin);
-                                break;
-                            }
+                            claimingPlugins.Add(plugin);
+                            break;
                         }
                     }
+                }
 
-                    if (claimingPlugins.Count > 0)
-                    {
-                        results.Add(new ResolvedArtifact(registry.Name, normalizedTracked, claimingPlugins));
-                    }
+                if (claimingPlugins.Count > 0)
+                {
+                    results.Add(new ResolvedArtifact(registry.Name, normalizedTracked, claimingPlugins));
                 }
             }
         }
@@ -75,24 +87,36 @@ public class ArtifactResolver : IArtifactResolver
         return results;
     }
 
-    private static bool IsMatch(string query, string trackedPath)
+    private bool IsMatch(string query, string trackedPath)
     {
-        if (query.Contains('/'))
+        if (HasGlobChars(query))
+            return _globMatcher.Matches(query, trackedPath);
+
+        if (trackedPath.Equals(query, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!query.EndsWith(".md", StringComparison.OrdinalIgnoreCase)
+            && trackedPath.Equals(query + ".md", StringComparison.OrdinalIgnoreCase))
         {
-            if (trackedPath.Equals(query, StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            if (!query.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
-            {
-                var withMd = query + ".md";
-                if (trackedPath.Equals(withMd, StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
-
-            return false;
+            return true;
         }
 
-        var fileName = Path.GetFileNameWithoutExtension(trackedPath);
-        return fileName.Equals(query, StringComparison.OrdinalIgnoreCase);
+        var prefix = query.TrimEnd('/') + "/";
+        if (trackedPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (!query.Contains('/'))
+        {
+            var fileName = Path.GetFileNameWithoutExtension(trackedPath);
+            if (fileName.Equals(query, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
     }
+
+    private static bool HasGlobChars(string query) => query.Contains('*') || query.Contains('?');
+
+    private static bool IsArtifactFile(string normalizedPath)
+        => normalizedPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
 }

@@ -5,6 +5,7 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>koru</ToolCommandName>
     <PackageId>Koru</PackageId>
+    <Version>1.0.3</Version>
   </PropertyGroup>
 
   <ItemGroup>

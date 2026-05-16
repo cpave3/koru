@@ -49,6 +49,8 @@ public class InstallPlanBuilder
                 continue;
             if (normalizedPath.StartsWith(".git/", StringComparison.OrdinalIgnoreCase))
                 continue;
+            if (!normalizedPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
+                continue;
 
             var sourceFullPath = Path.Combine(registryPath, filePath);
             var artifact = new Artifact(filePath, registryPath);

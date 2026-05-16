@@ -3,3 +3,5 @@ obj/
 .vs/
 *.user
 state.json
+/.local/share/NuGet/Migrations
+/plan.yaml

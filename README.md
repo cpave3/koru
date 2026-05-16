@@ -14,16 +14,71 @@ dotnet tool install -g Koru
 
 ```bash
 dotnet pack src/Koru.Cli -c Release
-dotnet tool install -g --add-source ./src/Koru.Cli/nupkg Koru
+dotnet tool install -g \
+  --add-source ./src/Koru.Cli/bin/Release \
+  --version 1.0.1 \
+  Koru
+```
+
+The `--version` pin is required: without it, `dotnet tool install` also queries the configured NuGet feeds and may pick up an unrelated `Koru` package from nuget.org that is not a .NET tool (producing a "Koru is not a .NET tool" error). Pinning a version the local source uniquely provides forces the local match.
+
+To install to a non-global location (handy for testing):
+
+```bash
+dotnet tool install --tool-path ./.bin \
+  --add-source ./src/Koru.Cli/bin/Release \
+  --version 1.0.1 \
+  Koru
+./.bin/koru --help
+```
+
+### Updating a global install after a local rebuild
+
+`dotnet tool update` is a no-op when the package version hasn't changed. Two reliable workflows:
+
+```bash
+# Workflow A: uninstall + reinstall (no version bump needed)
+dotnet tool uninstall -g Koru
+dotnet pack src/Koru.Cli -c Release
+dotnet tool install -g \
+  --add-source ./src/Koru.Cli/bin/Release \
+  --version 1.0.1 \
+  Koru
+```
+
+```bash
+# Workflow B: bump <Version> in src/Koru.Cli/Koru.Cli.csproj, then:
+dotnet pack src/Koru.Cli -c Release
+dotnet tool update -g \
+  --add-source ./src/Koru.Cli/bin/Release \
+  --version <new-version> \
+  Koru
 ```
 
 ## Quick start
 
-### Team onboarding
+### Create a new registry from scratch
+
+```bash
+koru init my-registry
+# Scaffolds ~/.koru/registries/my-registry/ with core/skills/, core/agents/,
+# registry.yaml, and an initialized git repo. Adds it to global config.
+
+cd ~/.koru/registries/my-registry
+echo "# Database Review Skill" > core/skills/database-review.md
+git add . && git commit -m "Add database review skill"
+
+# Push it to a remote so teammates can use it
+koru link git@github.com:me/agent-registry.git
+```
+
+### Joining an existing team registry
 
 ```bash
 koru use https://github.com/acme/agent-registry
-# Clones to ~/.koru/registries/acme-team/ and does an initial sync
+# Clones to ~/.koru/registries/acme-team/, reads registry.yaml,
+# reports any missing plugins (install with `koru plugin add <name>`)
+koru sync
 ```
 
 ### Adding a skill to the team registry
@@ -42,6 +97,22 @@ koru sync
 cd ~/Projects/acme-webapp
 koru install core/skills/database-review
 # Select scope (global/project-local) and mode (link/copy)
+```
+
+You can install several artifacts in one go:
+
+```bash
+# multiple artifacts at once — scope/mode prompted once for the batch
+koru install core/skills/review core/skills/style core/agents/format
+
+# a whole namespace (any tracked file under the prefix)
+koru install core/agents
+
+# glob pattern (quote it so the shell doesn't expand it locally)
+koru install 'core/agents/review-*'
+
+# pick interactively — space to toggle, enter to install selected
+koru install
 ```
 
 ### Daily sync
@@ -69,7 +140,7 @@ koru sync
 | `koru use <repo-url> [name]` | Clone an existing registry, report missing plugins, and run an initial sync. |
 | `koru sync [--dry-run] [--global-only] [--project <path>] [--yes]` | Pull registries and reconcile installed artifacts. |
 | `koru status` | Preview what a sync would create, update, remove, or detect as drifted. |
-| `koru install <artifact-path> [--yes]` | Install an artifact into the current project directory. |
+| `koru install [artifacts...] [--yes]` | Install one or more artifacts. Accepts exact paths, directory prefixes (`core/agents`), or globs (`'core/agents/review-*'`). Bare `koru install` opens an interactive multi-select picker. |
 | `koru remove <artifact-path> [--plugin <name>]` | Remove an installed artifact and its state record. |
 | `koru reset <artifact-path> [--plugin <name>]` | Re-copy a drifted artifact from the registry and refresh state. |
 | `koru untend <path>` | Remove a project from the tended-projects list. |

@@ -111,6 +111,93 @@ public class ArtifactResolverTests : IDisposable
     }
 
     [Fact]
+    public void Resolve_Directory_Prefix_Returns_All_Files_Beneath()
+    {
+        var reg = CreateRegistry("work", [
+            "core/skills/a.md",
+            "core/skills/b.md",
+            "core/agents/c.md",
+        ]);
+        var resolver = NewResolver(reg.Entry);
+
+        var matches = resolver.Resolve("core/skills");
+
+        Assert.Equal(2, matches.Count);
+        Assert.All(matches, m => Assert.StartsWith("core/skills/", m.SourcePath));
+    }
+
+    [Fact]
+    public void Resolve_Top_Level_Prefix_Returns_Everything_Under_Namespace()
+    {
+        var reg = CreateRegistry("work", [
+            "core/skills/a.md",
+            "core/agents/c.md",
+            "chimera/modes/d.md",
+        ]);
+        var resolver = NewResolver(reg.Entry, [
+            new FakePlugin("core", ["core/**"]),
+            new FakePlugin("chimera", ["chimera/**"]),
+        ]);
+
+        var matches = resolver.Resolve("core");
+
+        Assert.Equal(2, matches.Count);
+        Assert.All(matches, m => Assert.StartsWith("core/", m.SourcePath));
+    }
+
+    [Fact]
+    public void Resolve_Glob_Matches_With_Star()
+    {
+        var reg = CreateRegistry("work", [
+            "core/agents/review-correctness.md",
+            "core/agents/review-style.md",
+            "core/agents/format.md",
+        ]);
+        var resolver = NewResolver(reg.Entry);
+
+        var matches = resolver.Resolve("core/agents/review-*");
+
+        Assert.Equal(2, matches.Count);
+        Assert.Contains(matches, m => m.SourcePath == "core/agents/review-correctness.md");
+        Assert.Contains(matches, m => m.SourcePath == "core/agents/review-style.md");
+    }
+
+    [Fact]
+    public void ResolveAll_Returns_Every_Claimed_Artifact_Across_Registries()
+    {
+        var reg1 = CreateRegistry("work", ["core/skills/a.md", "core/skills/b.md"]);
+        var reg2 = CreateRegistry("personal", ["core/skills/c.md"]);
+        var resolver = NewResolverMulti([reg1.Entry, reg2.Entry]);
+
+        var matches = resolver.ResolveAll();
+
+        Assert.Equal(3, matches.Count);
+        Assert.Contains(matches, m => m.RegistryName == "work" && m.SourcePath == "core/skills/a.md");
+        Assert.Contains(matches, m => m.RegistryName == "personal" && m.SourcePath == "core/skills/c.md");
+    }
+
+    [Fact]
+    public void Resolve_Skips_Non_Markdown_Files()
+    {
+        var reg = CreateRegistry("work", [
+            "core/skills/a.md",
+            "core/skills/.gitkeep",
+            "core/agents/.gitkeep",
+            "core/agents/b.md",
+        ]);
+        var resolver = NewResolver(reg.Entry);
+
+        var resolved = resolver.ResolveAll();
+        var paths = resolved.Select(r => r.SourcePath).ToHashSet();
+
+        Assert.Equal(2, resolved.Count);
+        Assert.Contains("core/skills/a.md", paths);
+        Assert.Contains("core/agents/b.md", paths);
+        Assert.DoesNotContain("core/skills/.gitkeep", paths);
+        Assert.DoesNotContain("core/agents/.gitkeep", paths);
+    }
+
+    [Fact]
     public void Resolve_No_Match_Returns_Empty()
     {
         // Arrange
@@ -128,6 +215,28 @@ public class ArtifactResolverTests : IDisposable
 
         // Assert
         Assert.Empty(matches);
+    }
+
+    private ArtifactResolver NewResolver(RegistryEntry entry, List<IPlugin>? plugins = null)
+    {
+        plugins ??= [new FakePlugin("core", ["core/**"])];
+        return new ArtifactResolver(
+            new FakeConfigStore([entry]),
+            new GlobMatcher(),
+            new FakePluginHost(plugins),
+            _gitOps,
+            new PathExpander());
+    }
+
+    private ArtifactResolver NewResolverMulti(List<RegistryEntry> entries, List<IPlugin>? plugins = null)
+    {
+        plugins ??= [new FakePlugin("core", ["core/**"])];
+        return new ArtifactResolver(
+            new FakeConfigStore(entries),
+            new GlobMatcher(),
+            new FakePluginHost(plugins),
+            _gitOps,
+            new PathExpander());
     }
 
     private (string Path, RegistryEntry Entry) CreateRegistry(string name, string[] files)
