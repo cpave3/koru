@@ -88,7 +88,7 @@ public class SyncReconciler
                         DestinationPath = match.DestinationPath,
                         InstallMode = InstallMode.Link,
                         Plugin = match.Plugin,
-                        SourceChecksum = _checksum.ComputeSha256(sourcePath),
+                        SourceChecksum = HashSource(sourcePath),
                         InstalledChecksum = null,
                         Registry = registryName
                     });
@@ -174,7 +174,7 @@ public class SyncReconciler
                         DestinationPath = match.DestinationPath,
                         InstallMode = InstallMode.Link,
                         Plugin = match.Plugin,
-                        SourceChecksum = _checksum.ComputeSha256(sourcePath),
+                        SourceChecksum = HashSource(sourcePath),
                         InstalledChecksum = null,
                         Registry = registryName
                     });
@@ -212,10 +212,21 @@ public class SyncReconciler
         {
             if (_fileSystem.File.Exists(path))
                 _fileSystem.File.Delete(path);
+            else if (_fileSystem.Directory.Exists(path))
+                _fileSystem.Directory.Delete(path, recursive: true);
         }
         catch (IOException ex)
         {
             AnsiConsole.MarkupLine($"[yellow]Warning: could not remove {path}: {ex.Message}[/]");
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            AnsiConsole.MarkupLine($"[yellow]Warning: could not remove {path}: {ex.Message}[/]");
+        }
     }
+
+    private string HashSource(string sourcePath)
+        => Directory.Exists(sourcePath)
+            ? _checksum.ComputeSha256Tree(sourcePath)
+            : _checksum.ComputeSha256(sourcePath);
 }
