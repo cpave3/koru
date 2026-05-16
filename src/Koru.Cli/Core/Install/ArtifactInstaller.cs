@@ -1,6 +1,7 @@
 using Koru.Contracts;
 using Koru.Cli.Core.Abstractions;
 using Koru.Cli.Core.Models;
+using Koru.Cli.Core.Util;
 
 namespace Koru.Cli.Core.Install;
 
@@ -78,7 +79,7 @@ public class ArtifactInstaller
             }
             else
             {
-                File.Copy(sourcePath, absoluteDest, overwrite: true);
+                AtomicFile.Copy(sourcePath, absoluteDest);
                 sourceChecksum = _checksum.ComputeSha256(sourcePath);
                 installedChecksum = _checksum.ComputeSha256(absoluteDest);
             }

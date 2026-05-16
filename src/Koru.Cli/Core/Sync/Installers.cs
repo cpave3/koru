@@ -1,5 +1,6 @@
 using Koru.Cli.Core.Abstractions;
 using Koru.Cli.Core.Models;
+using Koru.Cli.Core.Util;
 using System.IO.Abstractions;
 
 namespace Koru.Cli.Core.Sync;
@@ -69,11 +70,7 @@ public class CopyInstaller : ICopyInstaller
 
     public (string SourceChecksum, string InstalledChecksum) Install(string sourcePath, string destinationPath)
     {
-        var parent = Path.GetDirectoryName(destinationPath);
-        if (!string.IsNullOrEmpty(parent) && !_fileSystem.Directory.Exists(parent))
-            _fileSystem.Directory.CreateDirectory(parent);
-
-        _fileSystem.File.Copy(sourcePath, destinationPath, overwrite: true);
+        AtomicFile.Copy(_fileSystem, sourcePath, destinationPath);
         var sourceChecksum = _checksum.ComputeSha256(sourcePath);
         var installedChecksum = _checksum.ComputeSha256(destinationPath);
         return (sourceChecksum, installedChecksum);
