@@ -56,4 +56,38 @@ public class AtomicFileTests : IDisposable
         var leftovers = Directory.GetFiles(_tempDir, "*.koru-*");
         Assert.Empty(leftovers);
     }
+
+    [Fact]
+    public void CopyDirectory_Recursively_Copies_Tree()
+    {
+        var src = Path.Combine(_tempDir, "skill");
+        Directory.CreateDirectory(Path.Combine(src, "scripts"));
+        File.WriteAllText(Path.Combine(src, "SKILL.md"), "skill content");
+        File.WriteAllText(Path.Combine(src, "scripts", "run.sh"), "#!/bin/sh");
+
+        var dst = Path.Combine(_tempDir, "out", "skill");
+
+        AtomicFile.CopyDirectory(src, dst);
+
+        Assert.Equal("skill content", File.ReadAllText(Path.Combine(dst, "SKILL.md")));
+        Assert.Equal("#!/bin/sh", File.ReadAllText(Path.Combine(dst, "scripts", "run.sh")));
+    }
+
+    [Fact]
+    public void CopyDirectory_Overwrites_Existing_Tree()
+    {
+        var src = Path.Combine(_tempDir, "src");
+        Directory.CreateDirectory(src);
+        File.WriteAllText(Path.Combine(src, "SKILL.md"), "new");
+
+        var dst = Path.Combine(_tempDir, "dst");
+        Directory.CreateDirectory(dst);
+        File.WriteAllText(Path.Combine(dst, "SKILL.md"), "old");
+        File.WriteAllText(Path.Combine(dst, "stale.md"), "stale");
+
+        AtomicFile.CopyDirectory(src, dst);
+
+        Assert.Equal("new", File.ReadAllText(Path.Combine(dst, "SKILL.md")));
+        Assert.False(File.Exists(Path.Combine(dst, "stale.md")));
+    }
 }

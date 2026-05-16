@@ -1,6 +1,7 @@
 using Koru.Contracts;
 using Koru.Cli.Core.Abstractions;
 using Koru.Cli.Core.Models;
+using Koru.Cli.Core.Util;
 
 namespace Koru.Cli.Core.Install;
 
@@ -53,15 +54,11 @@ public class ArtifactResolver : IArtifactResolver
                 registryPath = _pathExpander.Expand(registryPath);
 
             var trackedFiles = _gitOps.ListTrackedFiles(registryPath);
+            var artifacts = ArtifactDiscovery.Discover(trackedFiles);
 
-            foreach (var trackedPath in trackedFiles)
+            foreach (var artifact in artifacts)
             {
-                var normalizedTracked = trackedPath.Replace('\\', '/');
-
-                if (!IsArtifactFile(normalizedTracked))
-                    continue;
-
-                if (!predicate(normalizedTracked))
+                if (!predicate(artifact.Path))
                     continue;
 
                 var claimingPlugins = new List<IPlugin>();
@@ -69,7 +66,7 @@ public class ArtifactResolver : IArtifactResolver
                 {
                     foreach (var claim in plugin.PathClaims)
                     {
-                        if (_globMatcher.Matches(claim, normalizedTracked))
+                        if (_globMatcher.Matches(claim, artifact.Path))
                         {
                             claimingPlugins.Add(plugin);
                             break;
@@ -79,7 +76,7 @@ public class ArtifactResolver : IArtifactResolver
 
                 if (claimingPlugins.Count > 0)
                 {
-                    results.Add(new ResolvedArtifact(registry.Name, normalizedTracked, claimingPlugins));
+                    results.Add(new ResolvedArtifact(registry.Name, artifact.Path, claimingPlugins));
                 }
             }
         }
@@ -116,7 +113,4 @@ public class ArtifactResolver : IArtifactResolver
     }
 
     private static bool HasGlobChars(string query) => query.Contains('*') || query.Contains('?');
-
-    private static bool IsArtifactFile(string normalizedPath)
-        => normalizedPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
 }

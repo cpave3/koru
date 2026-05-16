@@ -177,6 +177,56 @@ public class ArtifactResolverTests : IDisposable
     }
 
     [Fact]
+    public void Resolve_Finds_Directory_Artifact_By_Name()
+    {
+        var reg = CreateRegistry("work", [
+            "core/skills/grill-me/SKILL.md",
+            "core/skills/grill-me/AGENT-BRIEF.md",
+        ]);
+        var resolver = NewResolver(reg.Entry);
+
+        var matches = resolver.Resolve("grill-me");
+
+        Assert.Single(matches);
+        Assert.Equal("core/skills/grill-me", matches[0].SourcePath);
+    }
+
+    [Fact]
+    public void Resolve_Finds_Both_File_And_Directory_With_Same_Basename()
+    {
+        var reg = CreateRegistry("work", [
+            "core/skills/review.md",
+            "core/skills/review/SKILL.md",
+        ]);
+        var resolver = NewResolver(reg.Entry);
+
+        var matches = resolver.Resolve("review");
+
+        Assert.Equal(2, matches.Count);
+        var paths = matches.Select(m => m.SourcePath).ToHashSet();
+        Assert.Contains("core/skills/review.md", paths);
+        Assert.Contains("core/skills/review", paths);
+    }
+
+    [Fact]
+    public void ResolveAll_Treats_SKILL_Md_Dir_As_Single_Artifact()
+    {
+        var reg = CreateRegistry("work", [
+            "core/skills/a.md",
+            "core/skills/grill-me/SKILL.md",
+            "core/skills/grill-me/notes.md",
+            "core/skills/grill-me/scripts/run.sh",
+        ]);
+        var resolver = NewResolver(reg.Entry);
+
+        var all = resolver.ResolveAll();
+
+        Assert.Equal(2, all.Count);
+        Assert.Contains(all, a => a.SourcePath == "core/skills/a.md");
+        Assert.Contains(all, a => a.SourcePath == "core/skills/grill-me");
+    }
+
+    [Fact]
     public void Resolve_Skips_Non_Markdown_Files()
     {
         var reg = CreateRegistry("work", [

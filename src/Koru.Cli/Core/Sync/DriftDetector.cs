@@ -21,17 +21,36 @@ public class DriftDetector
         var sourcePath = Path.Combine(registryRoot, record.SourcePath);
         var destPath = record.DestinationPath;
 
-        if (!File.Exists(destPath))
-            return DriftStatus.SourceChanged; // Destination missing → treat as needing update
+        var isDirectory = Directory.Exists(sourcePath)
+            || (record.SourceChecksum?.StartsWith("sha256-tree:", StringComparison.Ordinal) ?? false);
 
-        // 1. Check installed file drift
+        if (isDirectory)
+        {
+            if (!Directory.Exists(destPath))
+                return DriftStatus.SourceChanged;
+
+            var currentInstalled = _checksum.ComputeSha256Tree(destPath);
+            if (!string.Equals(currentInstalled, record.InstalledChecksum, StringComparison.OrdinalIgnoreCase))
+                return DriftStatus.Drifted;
+
+            if (!Directory.Exists(sourcePath))
+                return DriftStatus.SourceChanged;
+
+            var currentSource = _checksum.ComputeSha256Tree(sourcePath);
+            return string.Equals(currentSource, record.SourceChecksum, StringComparison.OrdinalIgnoreCase)
+                ? DriftStatus.NoChange
+                : DriftStatus.SourceChanged;
+        }
+
+        if (!File.Exists(destPath))
+            return DriftStatus.SourceChanged;
+
         var currentInstalledChecksum = _checksum.ComputeSha256(destPath);
         if (!string.Equals(currentInstalledChecksum, record.InstalledChecksum, StringComparison.OrdinalIgnoreCase))
             return DriftStatus.Drifted;
 
-        // 2. No drift — check if source changed
         if (!File.Exists(sourcePath))
-            return DriftStatus.SourceChanged; // Source missing → needs cleanup
+            return DriftStatus.SourceChanged;
 
         var currentSourceChecksum = _checksum.ComputeSha256(sourcePath);
         if (!string.Equals(currentSourceChecksum, record.SourceChecksum, StringComparison.OrdinalIgnoreCase))

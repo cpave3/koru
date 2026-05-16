@@ -44,4 +44,57 @@ public static class AtomicFile
             throw;
         }
     }
+
+    /// Recursively copies a directory tree, then atomically swaps it into place.
+    /// Stages the new tree at &lt;dest&gt;.koru-&lt;random&gt;, removes the existing destination
+    /// (if any) by renaming it to a tombstone, then Directory.Move's the new tree in.
+    /// Tombstone is deleted after the swap. Not strictly atomic (two rename ops),
+    /// but minimises the window where the destination is missing.
+    public static void CopyDirectory(string sourceDir, string destinationDir)
+    {
+        var parent = Path.GetDirectoryName(destinationDir);
+        if (!string.IsNullOrEmpty(parent))
+            Directory.CreateDirectory(parent);
+
+        var staging = $"{destinationDir}.koru-{Path.GetRandomFileName()}";
+        var tombstone = $"{destinationDir}.koru-old-{Path.GetRandomFileName()}";
+
+        try
+        {
+            CopyTree(sourceDir, staging);
+
+            if (Directory.Exists(destinationDir))
+            {
+                Directory.Move(destinationDir, tombstone);
+            }
+            else if (File.Exists(destinationDir))
+            {
+                File.Delete(destinationDir);
+            }
+
+            Directory.Move(staging, destinationDir);
+        }
+        catch
+        {
+            try { if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true); } catch { }
+            throw;
+        }
+        finally
+        {
+            try { if (Directory.Exists(tombstone)) Directory.Delete(tombstone, recursive: true); } catch { }
+        }
+    }
+
+    private static void CopyTree(string source, string target)
+    {
+        Directory.CreateDirectory(target);
+        foreach (var dir in Directory.GetDirectories(source, "*", SearchOption.AllDirectories))
+        {
+            Directory.CreateDirectory(dir.Replace(source, target));
+        }
+        foreach (var file in Directory.GetFiles(source, "*", SearchOption.AllDirectories))
+        {
+            File.Copy(file, file.Replace(source, target), overwrite: true);
+        }
+    }
 }

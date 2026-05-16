@@ -36,23 +36,31 @@ public class LinkInstaller : ILinkInstaller
         if (!string.IsNullOrEmpty(parent) && !_fileSystem.Directory.Exists(parent))
             _fileSystem.Directory.CreateDirectory(parent);
 
-        // Remove existing file/symlink at destination
         try
         {
             if (_fileSystem.File.Exists(destinationPath))
                 _fileSystem.File.Delete(destinationPath);
+            else if (_fileSystem.Directory.Exists(destinationPath))
+                _fileSystem.Directory.Delete(destinationPath, recursive: true);
         }
         catch (IOException) { }
 
+        var sourceIsDirectory = Directory.Exists(absoluteSource);
+
         try
         {
-            File.CreateSymbolicLink(destinationPath, absoluteSource);
+            if (sourceIsDirectory)
+                Directory.CreateSymbolicLink(destinationPath, absoluteSource);
+            else
+                File.CreateSymbolicLink(destinationPath, absoluteSource);
         }
         catch (UnauthorizedAccessException)
         {
-            // Windows privilege issue — fall back to copy
             Console.WriteLine($"Warning: Could not create symlink at '{destinationPath}' (insufficient privileges). Falling back to copy.");
-            _fileSystem.File.Copy(absoluteSource, destinationPath, overwrite: true);
+            if (sourceIsDirectory)
+                AtomicFile.CopyDirectory(absoluteSource, destinationPath);
+            else
+                AtomicFile.Copy(absoluteSource, destinationPath);
         }
     }
 }
@@ -70,6 +78,14 @@ public class CopyInstaller : ICopyInstaller
 
     public (string SourceChecksum, string InstalledChecksum) Install(string sourcePath, string destinationPath)
     {
+        if (Directory.Exists(sourcePath))
+        {
+            AtomicFile.CopyDirectory(sourcePath, destinationPath);
+            var sourceTreeHash = _checksum.ComputeSha256Tree(sourcePath);
+            var installedTreeHash = _checksum.ComputeSha256Tree(destinationPath);
+            return (sourceTreeHash, installedTreeHash);
+        }
+
         AtomicFile.Copy(_fileSystem, sourcePath, destinationPath);
         var sourceChecksum = _checksum.ComputeSha256(sourcePath);
         var installedChecksum = _checksum.ComputeSha256(destinationPath);

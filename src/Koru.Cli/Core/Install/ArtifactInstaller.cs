@@ -42,9 +42,14 @@ public class ArtifactInstaller
         var results = new List<InstallResultEntry>();
         var destinations = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase); // dest -> plugin
 
+        var isDirectory = Directory.Exists(sourcePath);
+
         foreach (var plugin in artifact.ClaimingPlugins)
         {
-            var plan = plugin.GetInstallPlan(new Artifact(artifact.SourcePath, registryRoot), scope, mode);
+            var plan = plugin.GetInstallPlan(
+                new Artifact(artifact.SourcePath, registryRoot, isDirectory),
+                scope,
+                mode);
             if (plan is null)
                 continue;
 
@@ -70,18 +75,37 @@ public class ArtifactInstaller
 
             if (mode == InstallMode.Link)
             {
-                // Remove existing file or symlink before creating new one
-                try { File.Delete(absoluteDest); } catch { }
+                try
+                {
+                    if (File.Exists(absoluteDest)) File.Delete(absoluteDest);
+                    else if (Directory.Exists(absoluteDest)) Directory.Delete(absoluteDest, recursive: true);
+                }
+                catch { }
 
-                File.CreateSymbolicLink(absoluteDest, sourcePath);
-                sourceChecksum = _checksum.ComputeSha256(sourcePath);
+                if (isDirectory)
+                    Directory.CreateSymbolicLink(absoluteDest, sourcePath);
+                else
+                    File.CreateSymbolicLink(absoluteDest, sourcePath);
+
+                sourceChecksum = isDirectory
+                    ? _checksum.ComputeSha256Tree(sourcePath)
+                    : _checksum.ComputeSha256(sourcePath);
                 installedChecksum = null;
             }
             else
             {
-                AtomicFile.Copy(sourcePath, absoluteDest);
-                sourceChecksum = _checksum.ComputeSha256(sourcePath);
-                installedChecksum = _checksum.ComputeSha256(absoluteDest);
+                if (isDirectory)
+                {
+                    AtomicFile.CopyDirectory(sourcePath, absoluteDest);
+                    sourceChecksum = _checksum.ComputeSha256Tree(sourcePath);
+                    installedChecksum = _checksum.ComputeSha256Tree(absoluteDest);
+                }
+                else
+                {
+                    AtomicFile.Copy(sourcePath, absoluteDest);
+                    sourceChecksum = _checksum.ComputeSha256(sourcePath);
+                    installedChecksum = _checksum.ComputeSha256(absoluteDest);
+                }
             }
 
             results.Add(new InstallResultEntry(plugin.Name, absoluteDest, mode, sourceChecksum, installedChecksum));

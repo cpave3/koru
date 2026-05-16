@@ -1,6 +1,7 @@
 using Koru.Cli.Core.Abstractions;
 using Koru.Cli.Core.Models;
 using Koru.Cli.Core.Plugins;
+using Koru.Cli.Core.Util;
 using Koru.Contracts;
 
 namespace Koru.Cli.Core.Sync;
@@ -37,25 +38,13 @@ public class InstallPlanBuilder
         var result = new List<DesiredInstall>();
         var existingRecords = _stateStore.Load(registryName);
         var trackedFiles = _gitOps.ListTrackedFiles(registryPath);
+        var artifacts = ArtifactDiscovery.Discover(trackedFiles);
 
-        foreach (var filePath in trackedFiles)
+        foreach (var discovered in artifacts)
         {
-            var normalizedPath = filePath.Replace('\\', '/');
+            var normalizedPath = discovered.Path;
+            var artifact = new Artifact(normalizedPath, registryPath, discovered.IsDirectory);
 
-            // Exclude registry metadata files
-            if (string.Equals(normalizedPath, "registry.yaml", StringComparison.OrdinalIgnoreCase))
-                continue;
-            if (string.Equals(normalizedPath, "state.json", StringComparison.OrdinalIgnoreCase))
-                continue;
-            if (normalizedPath.StartsWith(".git/", StringComparison.OrdinalIgnoreCase))
-                continue;
-            if (!normalizedPath.EndsWith(".md", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            var sourceFullPath = Path.Combine(registryPath, filePath);
-            var artifact = new Artifact(filePath, registryPath);
-
-            // Find claiming plugins
             var claimingPlugins = new List<IPlugin>();
             foreach (var plugin in plugins)
             {
@@ -69,29 +58,12 @@ public class InstallPlanBuilder
                 }
             }
 
-            // Core synthetic plugin fallback
-            var isClaimedByCore = false;
-            foreach (var claimTable in new[] { "core/skills/", "core/agents/" })
-            {
-                if (normalizedPath.StartsWith(claimTable, StringComparison.OrdinalIgnoreCase))
-                {
-                    isClaimedByCore = true;
-                    break;
-                }
-            }
-
+            var isClaimedByCore =
+                normalizedPath.StartsWith("core/skills/", StringComparison.OrdinalIgnoreCase) ||
+                normalizedPath.StartsWith("core/agents/", StringComparison.OrdinalIgnoreCase);
             if (!claimingPlugins.Any() && isClaimedByCore)
             {
-                // If no plugin matched but it's in core/, the CorePlugin should have matched.
-                // CorePlugin is in plugins list. If it didn't match, it means the path pattern
-                // didn't match. Let's add core plugin manually if applicable.
-                var corePlugin = plugins.FirstOrDefault(p => p.Name == "core");
-                if (corePlugin is null)
-                {
-                    // This is the synthetic core plugin — won't happen if PluginHost loaded it,
-                    // but just in case.
-                    corePlugin = new CorePlugin();
-                }
+                var corePlugin = plugins.FirstOrDefault(p => p.Name == "core") ?? new CorePlugin();
                 claimingPlugins.Add(corePlugin);
             }
 
