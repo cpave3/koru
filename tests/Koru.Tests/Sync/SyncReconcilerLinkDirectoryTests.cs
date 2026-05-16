@@ -67,6 +67,43 @@ public class SyncReconcilerLinkDirectoryTests : IDisposable
     }
 
     [Fact]
+    public void Reconcile_Idempotent_Link_Update_Reports_Zero_Updates()
+    {
+        var registryPath = Path.Combine(_tempDir, "registry");
+        var sourceDir = Path.Combine(registryPath, "core", "skills", "grill-with-docs");
+        Directory.CreateDirectory(sourceDir);
+        File.WriteAllText(Path.Combine(sourceDir, "SKILL.md"), "# skill");
+
+        var destPath = Path.Combine(_tempDir, "dest", "grill-with-docs");
+
+        var checksum = new Checksum();
+        var stateStore = new StateStore(_tempDir);
+        var driftDetector = new DriftDetector(checksum);
+        var linkInstaller = new LinkInstaller(new FileSystem(), new PathExpander());
+        var copyInstaller = new CopyInstaller(new FileSystem(), checksum);
+
+        var desired = new List<DesiredInstall>
+        {
+            new("test", "core/skills/grill-with-docs", destPath, "core", InstallMode.Link, Scope.Global, null),
+        };
+
+        var reconciler = new SyncReconciler(stateStore, driftDetector, linkInstaller, copyInstaller, new FileSystem(), checksum);
+
+        // First sync: creates the symlink.
+        var first = reconciler.Reconcile("test", registryPath, desired, dryRun: false);
+        Assert.Equal(1, first.Created);
+
+        // Second sync: symlink already points where we want. Should be a no-op.
+        var second = reconciler.Reconcile("test", registryPath, desired, dryRun: false);
+        Assert.Equal(0, second.Created);
+        Assert.Equal(0, second.Updated);
+
+        // Third sync: still a no-op.
+        var third = reconciler.Reconcile("test", registryPath, desired, dryRun: false);
+        Assert.Equal(0, third.Updated);
+    }
+
+    [Fact]
     public void Reconcile_Link_Create_With_Directory_Source_Uses_Tree_Checksum()
     {
         var registryPath = Path.Combine(_tempDir, "registry");

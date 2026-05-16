@@ -73,13 +73,22 @@ public class SyncReconciler
             // UPDATE
             if (match.Mode == InstallMode.Link)
             {
-                if (dryRun)
+                var sourcePath = Path.Combine(registryRoot, match.SourcePath);
+                var absoluteSource = Path.GetFullPath(sourcePath);
+
+                if (LinkPointsAt(match.DestinationPath, absoluteSource))
+                {
+                    // Symlink is already correct — no work, no count.
+                    newRecords.Add(record);
+                }
+                else if (dryRun)
                 {
                     AnsiConsole.MarkupLine($"[yellow][[DRY RUN]][/] Would update link: {match.DestinationPath}");
+                    newRecords.Add(record);
+                    updated++;
                 }
                 else
                 {
-                    var sourcePath = Path.Combine(registryRoot, match.SourcePath);
                     _linkInstaller.Install(sourcePath, match.DestinationPath);
 
                     newRecords.Add(new InstallRecord
@@ -92,8 +101,8 @@ public class SyncReconciler
                         InstalledChecksum = null,
                         Registry = registryName
                     });
+                    updated++;
                 }
-                updated++;
             }
             else
             {
@@ -229,4 +238,36 @@ public class SyncReconciler
         => Directory.Exists(sourcePath)
             ? _checksum.ComputeSha256Tree(sourcePath)
             : _checksum.ComputeSha256(sourcePath);
+
+    private static bool LinkPointsAt(string symlinkPath, string expectedAbsoluteTarget)
+    {
+        try
+        {
+            string? target = null;
+            var fi = new FileInfo(symlinkPath);
+            if (fi.Exists && fi.LinkTarget is not null)
+                target = fi.LinkTarget;
+            else
+            {
+                var di = new DirectoryInfo(symlinkPath);
+                if (di.Exists && di.LinkTarget is not null)
+                    target = di.LinkTarget;
+            }
+
+            if (target is null) return false;
+            if (!Path.IsPathFullyQualified(target))
+            {
+                var parent = Path.GetDirectoryName(symlinkPath);
+                target = parent is null ? target : Path.GetFullPath(Path.Combine(parent, target));
+            }
+            return string.Equals(
+                Path.GetFullPath(target),
+                Path.GetFullPath(expectedAbsoluteTarget),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }
