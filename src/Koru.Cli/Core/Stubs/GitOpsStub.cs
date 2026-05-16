@@ -13,4 +13,5 @@ public class GitOpsStub : IGitOps
     public void Push(string path) => throw new NotImplementedException("stub");
     public void SetRemote(string path, string remote) => throw new NotImplementedException("stub");
     public IReadOnlyList<string> Status(string path) => throw new NotImplementedException("stub");
+    public string GetHeadSha(string path) => throw new NotImplementedException("stub");
 }

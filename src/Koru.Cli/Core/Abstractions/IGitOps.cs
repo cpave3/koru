@@ -11,4 +11,7 @@ public interface IGitOps
     void SetRemote(string path, string remote);
     IReadOnlyList<string> ListTrackedFiles(string path);
     void CommitAll(string path, string message);
+
+    /// The full SHA-1 of HEAD. Throws if the repository has no commits.
+    string GetHeadSha(string path);
 }

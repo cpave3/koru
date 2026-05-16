@@ -207,6 +207,7 @@ public class InstallPlanBuilderTests
         public void Push(string path) => throw new NotImplementedException();
         public void SetRemote(string path, string remote) => throw new NotImplementedException();
         public IReadOnlyList<string> Status(string path) => throw new NotImplementedException();
+        public string GetHeadSha(string path) => throw new NotImplementedException();
     }
 
     private sealed record TestPlugin(string Name, string[] PathClaims, Func<Artifact, Scope, InstallMode, InstallPlan?> PlanFactory) : IPlugin

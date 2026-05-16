@@ -1,4 +1,5 @@
 using Koru.Cli.Commands.Config;
+using Koru.Cli.Commands.Import;
 using Koru.Cli.Commands.Install;
 using Koru.Cli.Commands.List;
 using Koru.Cli.Commands.Plugin;
@@ -35,6 +36,7 @@ public class Program
             config.AddCommand<StatusCommand>("status");
             config.AddCommand<ResetCommand>("reset");
             config.AddCommand<InstallCommand>("install");
+            config.AddCommand<ImportCommand>("import");
             config.AddCommand<RemoveCommand>("remove");
             config.AddCommand<UntendCommand>("untend");
 

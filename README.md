@@ -83,13 +83,49 @@ koru sync
 
 ### Adding a skill to the team registry
 
+A skill can be either a single `.md` file OR a directory containing `SKILL.md` plus any supplementary files. Both shapes live side-by-side under `core/skills/`.
+
 ```bash
 cd ~/.koru/registries/acme-team
+
+# Single-file shape
 echo "# Database Review Skill" > core/skills/database-review.md
-git add . && git commit -m "Add database review skill" && git push
+
+# Directory shape (preferred when you have supplementary docs/scripts)
+mkdir -p core/skills/grill-me
+cat > core/skills/grill-me/SKILL.md <<'EOF'
+# Grill Me
+Interview the user relentlessly...
+EOF
+echo "Agent brief..." > core/skills/grill-me/AGENT-BRIEF.md
+
+git add . && git commit -m "Add new skills" && git push
 # Teammates run:
 koru sync
 ```
+
+### Importing a skill from someone else's repo
+
+If a skill lives in another git repo (your own or a public one like `mattpocock/skills`), `koru import` copies it into your registry with provenance frontmatter so you can `sync` and `reset` it as a normal artifact.
+
+```bash
+# Import a SKILL.md-style directory from a public skills repo
+koru import https://github.com/mattpocock/skills skills/productivity/grill-me
+# → cloned, copied into core/skills/grill-me/, committed.
+# The imported SKILL.md gains a `source:` frontmatter block recording
+# the repo, path, ref, commit, and import timestamp.
+
+# Single .md import
+koru import https://github.com/foo/bar README.md --name foo-readme
+
+# Pick interactively (no subpath argument)
+koru import https://github.com/mattpocock/skills
+
+# Re-import on top of an existing one
+koru import https://github.com/mattpocock/skills skills/productivity/grill-me --force
+```
+
+After import, the artifact is a regular Koru asset: `koru install grill-me` places `~/.claude/skills/grill-me/` (whole tree), `koru sync` keeps it fresh from your registry, `koru reset` recovers from drift.
 
 ### Installing a skill in a project
 
@@ -141,6 +177,7 @@ koru sync
 | `koru sync [--dry-run] [--global-only] [--project <path>] [--yes]` | Pull registries and reconcile installed artifacts. |
 | `koru status` | Preview what a sync would create, update, remove, or detect as drifted. |
 | `koru install [artifacts...] [--yes]` | Install one or more artifacts. Accepts exact paths, directory prefixes (`core/agents`), or globs (`'core/agents/review-*'`). Bare `koru install` opens an interactive multi-select picker. |
+| `koru import <git-url> [<subpath>] [--name <local>] [--registry <reg>] [--force] [--yes]` | Copy a skill from another git repo into your registry, with a YAML `source:` frontmatter block recording its provenance. Supports both single-file (`.md`) and directory (`SKILL.md` + siblings) skills. Omit `<subpath>` for an interactive picker over the source repo. |
 | `koru remove <artifact-path> [--plugin <name>]` | Remove an installed artifact and its state record. |
 | `koru reset <artifact-path> [--plugin <name>]` | Re-copy a drifted artifact from the registry and refresh state. |
 | `koru untend <path>` | Remove a project from the tended-projects list. |

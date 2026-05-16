@@ -58,10 +58,11 @@ tests/
 
 ## Key invariants (do not break)
 
-- **Koru does not interpret artifact frontmatter.** Routing is by registry directory shape + plugin path claims. Don't add YAML-parsing of artifact contents.
+- **Koru does not interpret artifact frontmatter** *for routing*. Routing is by registry directory shape + plugin path claims. `koru import` is the only command that touches frontmatter — it stamps a `source:` block. Don't read other frontmatter keys from artifact contents in the core/sync paths.
+- **Artifacts come in two shapes**: a single `.md` file (e.g. `core/skills/foo.md`) or a directory containing `SKILL.md` plus siblings (e.g. `core/skills/grill-me/SKILL.md` + `AGENT-BRIEF.md` + `scripts/`). `ArtifactDiscovery` is the single source of truth for grouping tracked files into artifacts; resolver and planner both go through it. A `SKILL.md` claims its parent directory and every file beneath; a nested `SKILL.md` carves out a sub-artifact.
 - **`state.json` is per-registry, never committed.** Already in `.gitignore`. Don't move it into the registry tree.
 - **Plugin claims are additive.** Multiple plugins may claim the same registry path; both install. Two plugins producing the **same absolute destination** is a conflict and must abort sync with both plugin names.
-- **Copy-mode drift aborts sync.** Compare installed-file SHA-256 against recorded `installedChecksum`. Drift → bail with a `koru reset <artifact>` hint. Don't silently overwrite.
+- **Copy-mode drift aborts sync.** Compare installed-file SHA-256 against recorded `installedChecksum`. Drift → bail with a `koru reset <artifact>` hint. Don't silently overwrite. For directory artifacts, the checksum is an aggregate tree hash (`sha256-tree:` prefix) over a sorted manifest of every file's `(relpath, sha256)`; modifying any file in the tree counts as drift.
 - **Link mode bypasses drift detection entirely.** The symlink target is always refreshed to the current working-tree path on sync.
 - **Sync walks git-tracked files only.** Use `IGitOps.ListTrackedFiles`; exclude `.git/`, `state.json`, untracked files, and `registry.yaml`.
 - **Dirty registry working tree prompts the user** (abort vs. proceed-with-local). `--yes` defaults to proceed. `koru reset` requires a clean working tree.

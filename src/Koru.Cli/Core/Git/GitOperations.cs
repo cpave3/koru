@@ -110,6 +110,14 @@ public class GitOperations : IGitOps
         repo.Commit(message, sig, sig);
     }
 
+    public string GetHeadSha(string path)
+    {
+        using var repo = new Repository(path);
+        var head = repo.Head?.Tip
+            ?? throw new InvalidOperationException($"Repository at '{path}' has no commits.");
+        return head.Sha;
+    }
+
     private static Signature GetSignature(Repository repo)
     {
         var configName = repo.Config.Get<string>("user.name")?.Value;

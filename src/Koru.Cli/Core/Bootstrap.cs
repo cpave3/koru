@@ -8,6 +8,7 @@ using Koru.Cli.Core.State;
 using Koru.Cli.Core.Stubs;
 using Koru.Cli.Core.Util;
 using Koru.Cli.Commands.Config;
+using Koru.Cli.Commands.Import;
 using Koru.Cli.Commands.Install;
 using Koru.Cli.Commands.Registry;
 using Koru.Cli.Commands.List;
@@ -65,6 +66,7 @@ public static class Bootstrap
         services.AddTransient<SyncCommand>();
         services.AddTransient<StatusCommand>();
         services.AddTransient<ResetCommand>();
+        services.AddTransient<ImportCommand>();
 
         return services;
     }
